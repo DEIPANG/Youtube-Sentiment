@@ -76,4 +76,4 @@ with col2:
     st.subheader("Data: Filtered Comments")
     st.write(f"Showing {len(filtered_df)} comments.")
     # Show clean dataframe to users
-    st.dataframe(filtered_df[['Comment', 'Original_Sentiment', 'Star_Rating', 'Compound_Score']], use_container_width=True)
+ st.dataframe(filtered_df[['Comment', 'Sentiment', 'Star_Rating', 'Compound_Score']], use_container_width=True)
