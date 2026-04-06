@@ -79,7 +79,6 @@ def process_sentiment(df):
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg", width=150)
 st.sidebar.header("⚙️ App Settings")
 
-# --- NEW: Added 'Enter Custom Text' Option ---
 data_source = st.sidebar.radio("Choose Data Source:", [
     "Use Demo CSV", 
     "Analyze Real YouTube Video",
@@ -102,6 +101,8 @@ if data_source == "Analyze Real YouTube Video":
                 if raw_df is not None:
                     df = process_sentiment(raw_df)
                     st.session_state['current_df'] = df
+                    # --- NEW: Save the video URL to session state ---
+                    st.session_state['current_video_url'] = video_url 
 
 elif data_source == "Enter Custom Text":
     st.sidebar.markdown("---")
@@ -112,11 +113,12 @@ elif data_source == "Enter Custom Text":
             st.sidebar.warning("Please enter some text to analyze.")
         else:
             with st.spinner("Analyzing your text..."):
-                # Split text by line breaks
                 lines = [line.strip() for line in user_text.split('\n') if line.strip()]
                 raw_df = pd.DataFrame({'Comment': lines})
                 df = process_sentiment(raw_df)
                 st.session_state['current_df'] = df
+                # --- NEW: Clear video URL when using text ---
+                st.session_state['current_video_url'] = None 
 
 else:
     # Use Demo CSV
@@ -125,6 +127,8 @@ else:
             raw_df = pd.read_csv('YoutubeCommentsDataSet.csv')
             df = process_sentiment(raw_df)
             st.session_state['current_df'] = df
+            # --- NEW: Clear video URL when using demo data ---
+            st.session_state['current_video_url'] = None 
 
 # Load df from session state if it exists
 if 'current_df' in st.session_state:
@@ -136,6 +140,13 @@ st.markdown("Discover the true emotions behind the comments! Fetch real-time dat
 
 if not df.empty:
     st.markdown("---")
+    
+    # --- NEW: YouTube Video Player ---
+    # Check if a video URL is saved in the session and display it
+    if st.session_state.get('current_video_url'):
+        st.video(st.session_state['current_video_url'])
+        st.markdown("---")
+
     # --- Metrics Row ---
     avg_score = df['Star_Rating_Num'].mean()
     col_m1, col_m2, col_m3 = st.columns(3)
@@ -161,7 +172,6 @@ if not df.empty:
         st.subheader("☁️ Word Cloud (Common Themes)")
         all_words = ' '.join(df['Comment'].astype(str).tolist())
         try:
-            # Added try-except in case user inputs text without enough valid words
             wordcloud = WordCloud(width=800, height=500, background_color='white', colormap='Set2').generate(all_words)
             fig_wc, ax_wc = plt.subplots(figsize=(8, 5))
             ax_wc.imshow(wordcloud, interpolation='bilinear')
@@ -188,9 +198,9 @@ if not df.empty:
     st.download_button(
         label="📥 Download Data as CSV",
         data=csv,
-        file_name='analyzed_text_results.csv',
+        file_name='analyzed_results.csv',
         mime='text/csv',
     )
     
 else:
-    st.info("👈 Please use the Sidebar to load data or enter custom text!")
+    st.info("👈 Please use the Sidebar to load data, fetch a video, or enter custom text!")
