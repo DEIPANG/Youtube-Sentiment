@@ -3,3 +3,5 @@ streamlit
 matplotlib
 seaborn
 nltk
+google-api-python-client
+wordcloud
