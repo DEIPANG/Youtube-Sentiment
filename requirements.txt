@@ -1,7 +1,8 @@
-pandas
 streamlit
+pandas
 matplotlib
 seaborn
 nltk
-google-api-python-client
 wordcloud
+google-api-python-client
+textblob
