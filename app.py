@@ -7,16 +7,16 @@ import nltk
 import re
 from wordcloud import WordCloud
 from googleapiclient.discovery import build
-from textblob import TextBlob
 
-# --- 1. Page Config & Setup ---
+# 1. Page Config & Setup
 st.set_page_config(page_title="YouTube Sentiment App", page_icon="🎥", layout="wide")
 nltk.download('vader_lexicon', quiet=True)
 
+# Helper function to convert numbers to star emojis
 def get_star_string(rating):
     return '⭐' * int(rating)
 
-# --- 2. YouTube API Fetcher Function ---
+# 2. YouTube API Fetcher Function
 def get_youtube_comments(video_url, api_key, max_results=100):
     video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url)
     if not video_id_match:
@@ -43,7 +43,7 @@ def get_youtube_comments(video_url, api_key, max_results=100):
         st.error(f"API Error: {e}")
         return None
 
-# --- 3. Data Processing Function ---
+# 3. Data Processing Function
 def process_sentiment(df):
     def is_english(text):
         return bool(re.match(r'^[a-zA-Z0-9\s.,!?\'"]+$', str(text)))
@@ -73,11 +73,9 @@ def process_sentiment(df):
     df['Stars'] = df['Star_Rating_Num'].apply(get_star_string)
     df['Sentiment'] = df['Star_Rating_Num'].apply(lambda x: 'Positive' if x >=4 else ('Neutral' if x == 3 else 'Negative'))
     
-    df['Token_Count'] = df['Comment'].apply(lambda x: len(TextBlob(str(x)).words))
-    
     return df
 
-# --- 4. Sidebar UI ---
+# 4. Sidebar UI (Settings & Inputs)
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg", width=150)
 st.sidebar.header("⚙️ App Settings")
 
@@ -87,7 +85,7 @@ data_source = st.sidebar.radio("Choose Data Source:", [
     "Enter Custom Text"
 ])
 
-df = pd.DataFrame() 
+df = pd.DataFrame() # Initialize empty dataframe
 
 if data_source == "Analyze Real YouTube Video":
     st.sidebar.markdown("---")
@@ -103,6 +101,7 @@ if data_source == "Analyze Real YouTube Video":
                 if raw_df is not None:
                     df = process_sentiment(raw_df)
                     st.session_state['current_df'] = df
+                    # --- NEW: Save the video URL to session state ---
                     st.session_state['current_video_url'] = video_url 
 
 elif data_source == "Enter Custom Text":
@@ -118,30 +117,37 @@ elif data_source == "Enter Custom Text":
                 raw_df = pd.DataFrame({'Comment': lines})
                 df = process_sentiment(raw_df)
                 st.session_state['current_df'] = df
+                # --- NEW: Clear video URL when using text ---
                 st.session_state['current_video_url'] = None 
 
 else:
+    # Use Demo CSV
     if st.sidebar.button("Load Demo Data"):
         with st.spinner("Loading local CSV..."):
             raw_df = pd.read_csv('YoutubeCommentsDataSet.csv')
             df = process_sentiment(raw_df)
             st.session_state['current_df'] = df
+            # --- NEW: Clear video URL when using demo data ---
             st.session_state['current_video_url'] = None 
 
+# Load df from session state if it exists
 if 'current_df' in st.session_state:
     df = st.session_state['current_df']
 
-# --- 5. Main Dashboard UI ---
+# 5. Main Dashboard UI
 st.title("📊 YouTube Comments Sentiment Analyzer")
 st.markdown("Discover the true emotions behind the comments! Fetch real-time data, use the demo, or enter your own text.")
 
 if not df.empty:
     st.markdown("---")
     
+    # --- NEW: YouTube Video Player ---
+    # Check if a video URL is saved in the session and display it
     if st.session_state.get('current_video_url'):
         st.video(st.session_state['current_video_url'])
         st.markdown("---")
 
+    # --- Metrics Row ---
     avg_score = df['Star_Rating_Num'].mean()
     col_m1, col_m2, col_m3 = st.columns(3)
     col_m1.metric("Total English Comments", len(df))
@@ -150,6 +156,7 @@ if not df.empty:
 
     st.markdown("---")
     
+    # --- Visualizations Row ---
     col1, col2 = st.columns(2)
     
     with col1:
@@ -175,6 +182,7 @@ if not df.empty:
 
     st.markdown("---")
     
+    # --- Filter & Data Table Row ---
     st.subheader("🔍 Explore the Data")
     
     star_options = ['⭐⭐⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐', '⭐⭐', '⭐']
@@ -183,8 +191,9 @@ if not df.empty:
     filtered_df = df[df['Stars'].isin(selected_stars)]
     
     st.write(f"Showing **{len(filtered_df)}** comments based on your filter:")
-    st.dataframe(filtered_df[['Stars', 'Sentiment', 'Token_Count', 'Comment', 'Compound_Score']], use_container_width=True)
+    st.dataframe(filtered_df[['Stars', 'Sentiment', 'Comment', 'Compound_Score']], use_container_width=True)
     
+    # --- Download Button ---
     csv = filtered_df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Download Data as CSV",
@@ -192,33 +201,6 @@ if not df.empty:
         file_name='analyzed_results.csv',
         mime='text/csv',
     )
-
-    # --- 6. NLP Deep Dive Inspector ---
-    st.markdown("---")
-    st.subheader("🪄 NLP Deep Dive Inspector")
-    st.markdown("Select a comment from the filtered list above to analyze its grammar and structure.")
     
-    if not filtered_df.empty:
-        comment_list = filtered_df['Comment'].tolist()
-        selected_comment = st.selectbox("Select a comment to inspect:", comment_list)
-        
-        if selected_comment:
-            inspector_blob = TextBlob(selected_comment)
-            
-            col_nlp1, col_nlp2 = st.columns(2)
-            
-            with col_nlp1:
-                st.info("✨ Spell Check Suggestion")
-                corrected_text = inspector_blob.correct()
-                if str(corrected_text) == selected_comment:
-                    st.success("The spelling looks perfect! ✅")
-                else:
-                    st.warning(f"**Did you mean:** {corrected_text}")
-                    
-            with col_nlp2:
-                st.info("🏷️ Parts of Speech (POS) Tags")
-                with st.expander("View all tags for this sentence"):
-                    for word, tag in inspector_blob.tags:
-                        st.markdown(f"- **{word}** : `{tag}`")
 else:
     st.info("👈 Please use the Sidebar to load data, fetch a video, or enter custom text!")
