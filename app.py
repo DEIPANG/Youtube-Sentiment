@@ -5,81 +5,19 @@ import seaborn as sns
 from nltk.sentiment import SentimentIntensityAnalyzer
 import nltk
 import re
+from wordcloud import WordCloud
 from googleapiclient.discovery import build
 
-# --- Setup & Configuration ---
-st.set_page_config(page_title="YouTube Sentiment Analyzer", page_icon="🎥", layout="wide")
+# 1. Page Config & Setup
+st.set_page_config(page_title="YouTube Sentiment App", page_icon="🎥", layout="wide")
 nltk.download('vader_lexicon', quiet=True)
 
-# --- Custom CSS for Styling & Hover Effects ---
-st.markdown("""
-<style>
-    /* Header styling */
-    .header-container {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 0;
-        border-bottom: 1px solid #333;
-        margin-bottom: 30px;
-    }
-    .header-logo {
-        font-size: 24px;
-        font-weight: bold;
-        color: #FF0000;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .header-links a {
-        color: #E0E0E0;
-        text-decoration: none;
-        margin-left: 20px;
-        font-weight: 500;
-        transition: color 0.3s ease;
-    }
-    .header-links a:hover {
-        color: #FF0000;
-    }
-    
-    /* Video Card Styling */
-    .video-card {
-        background-color: #1E1E1E;
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-        border: 1px solid #333;
-        cursor: pointer;
-        min-height: 200px;
-    }
-    .video-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(255, 0, 0, 0.2);
-        border-color: #FF0000;
-    }
-    .video-card img {
-        width: 100%;
-        border-radius: 8px;
-        margin-bottom: 10px;
-    }
-    .video-card h4 {
-        font-size: 16px;
-        color: #FFF;
-        margin-bottom: 5px;
-    }
-    .video-card p {
-        font-size: 12px;
-        color: #AAA;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- Helper Functions ---
+# Helper function to convert numbers to star emojis
 def get_star_string(rating):
     return '⭐' * int(rating)
 
-def get_youtube_comments(video_url, api_key, max_results=50):
+# 2. YouTube API Fetcher Function
+def get_youtube_comments(video_url, api_key, max_results=100):
     video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", video_url)
     if not video_id_match:
         return None
@@ -105,6 +43,7 @@ def get_youtube_comments(video_url, api_key, max_results=50):
         st.error(f"API Error: {e}")
         return None
 
+# 3. Data Processing Function
 def process_sentiment(df):
     def is_english(text):
         return bool(re.match(r'^[a-zA-Z0-9\s.,!?\'"]+$', str(text)))
@@ -130,109 +69,138 @@ def process_sentiment(df):
         elif score > -0.5: return 2
         else: return 1
         
-    df['Stars_Num'] = df['Compound_Score'].apply(get_star_rating)
-    df['Stars'] = df['Stars_Num'].apply(get_star_string)
-    df['Sentiment'] = df['Stars_Num'].apply(lambda x: 'Positive' if x >=4 else ('Neutral' if x == 3 else 'Negative'))
+    df['Star_Rating_Num'] = df['Compound_Score'].apply(get_star_rating)
+    df['Stars'] = df['Star_Rating_Num'].apply(get_star_string)
+    df['Sentiment'] = df['Star_Rating_Num'].apply(lambda x: 'Positive' if x >=4 else ('Neutral' if x == 3 else 'Negative'))
     
     return df
 
-# --- Render Custom Header ---
-st.markdown("""
-<div class="header-container">
-    <div class="header-logo">
-        ▶ YouTube NLP Analyzer
-    </div>
-    <div class="header-links">
-        <a href="#">Dashboard</a>
-        <a href="#">My Projects</a>
-        <a href="#">Settings</a>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# 4. Sidebar UI (Settings & Inputs)
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg", width=150)
+st.sidebar.header("⚙️ App Settings")
 
-# --- Main Input Area ---
-col_space1, col_input, col_space2 = st.columns([1, 2, 1])
-with col_input:
-    api_key = st.text_input("YouTube API Key (Required for live data)", type="password", placeholder="Enter your Google Cloud API Key...")
-    video_url = st.text_input("Paste YouTube Video Link Here", placeholder="https://www.youtube.com/watch?v=...")
+data_source = st.sidebar.radio("Choose Data Source:", [
+    "Use Demo CSV", 
+    "Analyze Real YouTube Video",
+    "Enter Custom Text"
+])
 
-st.markdown("<br>", unsafe_allow_html=True)
+df = pd.DataFrame() # Initialize empty dataframe
 
-# --- View State Logic ---
-if not video_url:
-    # State 1: Recommended Videos Grid (Initial State)
-    st.subheader("Recommended for Analysis")
-    st.markdown("<br>", unsafe_allow_html=True)
+if data_source == "Analyze Real YouTube Video":
+    st.sidebar.markdown("---")
+    api_key = st.sidebar.text_input("Enter YouTube API Key:", type="password")
+    video_url = st.sidebar.text_input("Enter YouTube Video URL:")
     
-    c1, c2, c3, c4 = st.columns(4)
-    
-    def render_video_card(col, title, desc):
-        col.markdown(f"""
-        <div class="video-card">
-            <div style="height: 100px; background-color: #333; border-radius: 5px; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; color: #666;">Thumbnail</div>
-            <h4>{title}</h4>
-            <p>{desc}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if st.sidebar.button("Fetch & Analyze"):
+        if not api_key or not video_url:
+            st.sidebar.warning("Please provide both API Key and Video URL.")
+        else:
+            with st.spinner("Fetching comments from YouTube..."):
+                raw_df = get_youtube_comments(video_url, api_key)
+                if raw_df is not None:
+                    df = process_sentiment(raw_df)
+                    st.session_state['current_df'] = df
+                    # --- NEW: Save the video URL to session state ---
+                    st.session_state['current_video_url'] = video_url 
 
-    render_video_card(c1, "Tech Review 2024", "Analyze gadget opinions")
-    render_video_card(c2, "Gaming Highlights", "Track audience reactions")
-    render_video_card(c3, "Music Video Launch", "Fan sentiment breakdown")
-    render_video_card(c4, "Movie Trailer", "Hype vs Disappointment")
+elif data_source == "Enter Custom Text":
+    st.sidebar.markdown("---")
+    user_text = st.sidebar.text_area("Type or paste text here (one comment per line):", height=150)
+    
+    if st.sidebar.button("Analyze Text"):
+        if not user_text.strip():
+            st.sidebar.warning("Please enter some text to analyze.")
+        else:
+            with st.spinner("Analyzing your text..."):
+                lines = [line.strip() for line in user_text.split('\n') if line.strip()]
+                raw_df = pd.DataFrame({'Comment': lines})
+                df = process_sentiment(raw_df)
+                st.session_state['current_df'] = df
+                # --- NEW: Clear video URL when using text ---
+                st.session_state['current_video_url'] = None 
 
 else:
-    # State 2: Analysis Results
-    if not api_key:
-        st.warning("Please enter your API key to fetch live comments.")
-    else:
-        with st.spinner("Fetching and analyzing comments..."):
-            raw_df = get_youtube_comments(video_url, api_key)
-            
-            if raw_df is not None and not raw_df.empty:
-                df = process_sentiment(raw_df)
-                
-                # --- Embedded Video ---
-                st.video(video_url)
-                st.markdown("---")
-                
-                # --- Star Rating Filter ---
-                st.subheader("Filter by Star Rating")
-                star_options = ['⭐⭐⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐', '⭐⭐', '⭐']
-                selected_stars = st.multiselect("Select ratings to display:", options=star_options, default=star_options)
-                
-                filtered_df = df[df['Stars'].isin(selected_stars)]
-                
-                # --- Data Table ---
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.subheader("Comment Data")
-                st.dataframe(
-                    filtered_df[['Stars', 'Sentiment', 'Comment', 'Compound_Score']], 
-                    use_container_width=True,
-                    height=300
-                )
-                
-                # --- Sentiment Bar Chart ---
-                st.markdown("---")
-                st.subheader("Sentiment Distribution")
-                
-                sentiment_counts = df['Sentiment'].value_counts().reindex(['Positive', 'Neutral', 'Negative'], fill_value=0)
-                
-                fig, ax = plt.subplots(figsize=(10, 4))
-                fig.patch.set_facecolor('#0E1117') 
-                ax.set_facecolor('#0E1117')
-                
-                colors = ['#00C853', '#9E9E9E', '#FF3D00'] # Green, Gray, Red
-                
-                bars = ax.bar(sentiment_counts.index, sentiment_counts.values, color=colors, width=0.5)
-                
-                ax.set_ylabel('Number of Comments', color='white')
-                ax.tick_params(axis='x', colors='white')
-                ax.tick_params(axis='y', colors='white')
-                
-                for spine in ax.spines.values():
-                    spine.set_edgecolor('#333')
-                
-                st.pyplot(fig)
-                
-            else:
-                st.error("Could not fetch comments or the video has no comments.")
+    # Use Demo CSV
+    if st.sidebar.button("Load Demo Data"):
+        with st.spinner("Loading local CSV..."):
+            raw_df = pd.read_csv('YoutubeCommentsDataSet.csv')
+            df = process_sentiment(raw_df)
+            st.session_state['current_df'] = df
+            # --- NEW: Clear video URL when using demo data ---
+            st.session_state['current_video_url'] = None 
+
+# Load df from session state if it exists
+if 'current_df' in st.session_state:
+    df = st.session_state['current_df']
+
+# 5. Main Dashboard UI
+st.title("📊 YouTube Comments Sentiment Analyzer")
+st.markdown("Discover the true emotions behind the comments! Fetch real-time data, use the demo, or enter your own text.")
+
+if not df.empty:
+    st.markdown("---")
+    
+    # --- NEW: YouTube Video Player ---
+    # Check if a video URL is saved in the session and display it
+    if st.session_state.get('current_video_url'):
+        st.video(st.session_state['current_video_url'])
+        st.markdown("---")
+
+    # --- Metrics Row ---
+    avg_score = df['Star_Rating_Num'].mean()
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("Total English Comments", len(df))
+    col_m2.metric("Average Star Rating", f"{avg_score:.1f} ⭐")
+    col_m3.metric("Overall Sentiment", "Positive 😊" if avg_score >= 3.5 else ("Neutral 😐" if avg_score >= 2.5 else "Negative 😠"))
+
+    st.markdown("---")
+    
+    # --- Visualizations Row ---
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("⭐ Star Rating Distribution")
+        fig_stars, ax_stars = plt.subplots(figsize=(8, 5))
+        order = ['⭐⭐⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐', '⭐⭐', '⭐']
+        sns.countplot(data=df, y='Stars', order=order, palette='viridis', ax=ax_stars)
+        ax_stars.set_xlabel("Number of Comments")
+        ax_stars.set_ylabel("")
+        st.pyplot(fig_stars)
+        
+    with col2:
+        st.subheader("☁️ Word Cloud (Common Themes)")
+        all_words = ' '.join(df['Comment'].astype(str).tolist())
+        try:
+            wordcloud = WordCloud(width=800, height=500, background_color='white', colormap='Set2').generate(all_words)
+            fig_wc, ax_wc = plt.subplots(figsize=(8, 5))
+            ax_wc.imshow(wordcloud, interpolation='bilinear')
+            ax_wc.axis('off')
+            st.pyplot(fig_wc)
+        except ValueError:
+            st.info("Not enough words to generate a word cloud.")
+
+    st.markdown("---")
+    
+    # --- Filter & Data Table Row ---
+    st.subheader("🔍 Explore the Data")
+    
+    star_options = ['⭐⭐⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐', '⭐⭐', '⭐']
+    selected_stars = st.multiselect("Filter by Star Rating:", options=star_options, default=star_options)
+    
+    filtered_df = df[df['Stars'].isin(selected_stars)]
+    
+    st.write(f"Showing **{len(filtered_df)}** comments based on your filter:")
+    st.dataframe(filtered_df[['Stars', 'Sentiment', 'Comment', 'Compound_Score']], use_container_width=True)
+    
+    # --- Download Button ---
+    csv = filtered_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Data as CSV",
+        data=csv,
+        file_name='analyzed_results.csv',
+        mime='text/csv',
+    )
+    
+else:
+    st.info("👈 Please use the Sidebar to load data, fetch a video, or enter custom text!")
